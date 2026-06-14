@@ -27,3 +27,5 @@ serde_json = "1"
 # strict coherence solver inside cookie/tauri-utils. Remove once upstream
 # (time or rustc) ships a fix. See PLAN.md.
 time = "=0.3.46"
+whisper-rs = "0.16.0"
+hound = "3.5.1"
