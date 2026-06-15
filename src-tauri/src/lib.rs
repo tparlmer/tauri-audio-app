@@ -120,3 +120,64 @@ fn transcribes_jfk() {
     println!("TRANSCRIPT: {text}");
     assert!(text.to_lowercase().contains("country"));
 }
+
+#[test]
+fn print_input_device() {
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    // the "host" is the OS audio system (CoreAudio on macOS)
+    let host = cpal::default_host();
+    // The default input device is the users current default microphone
+    let device = host
+        .default_input_device()
+        .expect("no input device available");
+    println!("Input device: {}", device);
+
+    // The device's default capture format. This is what we'l be resampling from
+    let config = device
+        .default_input_config()
+        .expect("no default input config");
+    println!(" sample rate: {} Hz", config.sample_rate());
+    println!(" channels: {}", config.channels());
+    println!(" sample format: {:?}", config.sample_format());
+}
+
+#[test]
+fn captures_audio() {
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    let host = cpal::default_host();
+    let device = host.default_input_device().expect("no input device");
+    let config = device.default_input_config().expect("no default config");
+
+    // Shared buffer: the audio thread writes to it, the main thread reads it afterward.
+    // Arc = shared ownership across threads; Mutex = safe shared mutation.
+    // TODO: Review Rust concurrency patterns below
+    let buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
+    let buffer_for_cb = Arc::clone(&buffer); // a second handle to the same buffer
+
+    let stream = device
+        .build_input_stream(
+            config.into(),
+            // This closure runs on cpal's real-time AUDIO thread, repeatedly,
+            // handed a chunk of samples each time. `move` gives it ownership of
+            // buffer_for_cb. We only do the cehap thing here: append the samples
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                buffer_for_cb.lock().unwrap().extend_from_slice(data);
+            },
+            |err| eprintln!("stream error: {err}"),
+            None, // timeout
+        )
+        .expect("failed to build input stream");
+
+    stream.play().expect("failed to start stream"); // start capturing
+    println!("recording 3 seconds... say something");
+    std::thread::sleep(Duration::from_secs(3));
+    drop(stream); // stopping = dropping the stream (RAII))
+
+    let n = buffer.lock().unwrap().len();
+    println!("captured {n} samples (~{} seconds at 48kHz)", n / 48000);
+    assert!(n > 0, "no audio captured");
+}
