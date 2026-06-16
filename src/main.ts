@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 let greetInputEl: HTMLInputElement | null;
 let greetMsgEl: HTMLElement | null;
 let transcriptEl: HTMLElement | null;
+let llmResponseEl: HTMLElement | null;
 
 async function greet() {
   if (greetMsgEl && greetInputEl) {
@@ -10,6 +11,33 @@ async function greet() {
     greetMsgEl.textContent = await invoke("greet", {
       name: greetInputEl.value,
     });
+  }
+}
+
+async function askLlm() {
+  if (!llmResponseEl || !transcriptEl) return;
+  const text = transcriptEl.textContent ?? "";
+  if (!text.trim()) {
+    llmResponseEl.textContent = "Transcribe something first.";
+    return;
+  }
+  llmResponseEl.textContent = "Thinking...";
+  try {
+    llmResponseEl.textContent = await invoke<string>("analyze_transcript", {
+      text,
+    });
+  } catch (err) {
+    llmResponseEl.textContent = `Error: ${err}`;
+  }
+}
+
+async function record() {
+  if (!transcriptEl) return;
+  transcriptEl.textContent = "Recording 5s... speak now";
+  try {
+    transcriptEl.textContent = await invoke<string>("record_and_transcribe");
+  } catch (err) {
+    transcriptEl.textContent = `Error: ${err}`;
   }
 }
 
@@ -41,4 +69,11 @@ window.addEventListener("DOMContentLoaded", () => {
   document.querySelector("#transcribe-btn")?.addEventListener("click", () => {
     transcribe();
   });
+
+  document
+    .querySelector("#record-btn")
+    ?.addEventListener("click", () => record());
+
+  llmResponseEl = document.querySelector("#llm-response");
+  document.querySelector("#llm-btn")?.addEventListener("click", () => askLlm());
 });
