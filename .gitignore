@@ -28,3 +28,4 @@ PLAN.md
 
 # Whisper model
 src-tauri/models/*.bin
+docs/
