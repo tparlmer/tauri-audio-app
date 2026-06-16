@@ -1,7 +1,21 @@
-# Tauri + Vanilla TS
+# Tauri Audio App
 
-This template should help get you started developing with Tauri in vanilla HTML, CSS and Typescript.
+## Description
 
-## Recommended IDE Setup
+`tauri-audio-app` is a MacOS desktop application built usint the [Tauri](https://tauri.app/start/) framework. It takes audio input, transcribes the audio to text using whisper.cpp, and calls an LLM via API to analyze the transcript.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+TODO: Add gif of frontend workflow
+
+## Quickstart
+
+1. Download and install whisper
+  - [Instructions in repo](https://github.com/ggml-org/whisper.cpp)
+  - TODO: Adjust this section for production build
+
+## Known Limitations
+
+Microphone access for MacOS only works with a full build. If you download the source code and run with `pnpm tauri dev`, the microphone will not work.
+
+## Future Plans
+
+Currently this build only runs for MacOS. It will be extended in the future to work on Windows as well.
