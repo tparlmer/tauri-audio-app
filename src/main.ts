@@ -4,6 +4,15 @@ let greetInputEl: HTMLInputElement | null;
 let greetMsgEl: HTMLElement | null;
 let transcriptEl: HTMLElement | null;
 let llmResponseEl: HTMLElement | null;
+let metricsEl: HTMLElement | null;
+
+// Mirrors the Rust FillerReport. serde keeps the field names as-is (snake_case)
+// and Rust tuples (String, usize) serialize as JSON arrays [string, number].
+interface FillerReport {
+  word_count: number;
+  filler_total: number;
+  breakdown: [string, number][];
+}
 
 async function greet() {
   if (greetMsgEl && greetInputEl) {
@@ -12,6 +21,21 @@ async function greet() {
       name: greetInputEl.value,
     });
   }
+}
+
+async function showMetrics() {
+  if (!metricsEl || !transcriptEl) return;
+  const text = transcriptEl.textContent ?? "";
+  if (!text.trim()) {
+    metricsEl.textContent = "Transcribe something first.";
+    return;
+  }
+
+  const r = await invoke<FillerReport>("analyze_speech", { text });
+  const detail = r.breakdown.map(([w, n]) => `${w}: ${n}`).join(", ");
+  metricsEl.textContent =
+    `${r.word_count} words - ${r.filler_total} fillers` +
+    (detail ? ` – ${detail}` : "");
 }
 
 async function askLlm() {
@@ -76,4 +100,9 @@ window.addEventListener("DOMContentLoaded", () => {
 
   llmResponseEl = document.querySelector("#llm-response");
   document.querySelector("#llm-btn")?.addEventListener("click", () => askLlm());
+
+  metricsEl = document.querySelector("#metrics");
+  document
+    .querySelector("#metrics-btn")
+    ?.addEventListener("click", () => showMetrics());
 });

@@ -2,7 +2,9 @@
 
 ## Description
 
-`tauri-audio-app` is a MacOS desktop application built usint the [Tauri](https://tauri.app/start/) framework. It takes audio input, transcribes the audio to text using whisper.cpp, and calls an LLM via API to analyze the transcript.
+Welcome to Tauri Audio App - the public speaking coach on your local machine.
+
+`tauri-audio-app` is a MacOS desktop application built usint the [Tauri](https://tauri.app/start/) framework. It takes audio input, transcribes the audio to text using whisper.cpp, and calls an LLM via API to analyze the transcript. The initia
 
 TODO: Add gif of frontend workflow
 
@@ -11,6 +13,7 @@ TODO: Add gif of frontend workflow
 1. Download and install whisper
   - [Instructions in repo](https://github.com/ggml-org/whisper.cpp)
   - TODO: Adjust this section for production build
+2. Configure an LLM provider (I like [OpenRouter](https://openrouter.ai/))
 
 ## Known Limitations
 

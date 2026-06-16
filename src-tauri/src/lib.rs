@@ -99,10 +99,76 @@ fn downsample_48k_to_16k(input: &[f32]) -> Vec<f32> {
         .collect()
 }
 
+// Deterministic filler-wrod analysis - runs fully offline, no LLM required.
+// Classic Toastmasters "crutch words"
+// Ambiguous words like "so"/"well"/"right" intentionally left out
+const FILLER_WORDS: &[&str] = &[
+    "um",
+    "uh",
+    "er",
+    "ah",
+    "like",
+    "actually",
+    "basically",
+    "literally",
+];
+const FILLER_PHRASES: &[&str] = &["you know", "i mean", "sort of", "kind of"];
+
+#[derive(serde::Serialize)]
+struct FillerReport {
+    word_count: usize,
+    filler_total: usize,
+    breakdown: Vec<(String, usize)>, // (filler, count), only the ones that occured
+}
+
+fn count_fillers(transcript: &str) -> FillerReport {
+    let lower = transcript.to_lowercase();
+
+    // Split into words on any non-letter/digit (spaces and punctuation)
+    let words: Vec<&str> = lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+
+    let mut breakdown: Vec<(String, usize)> = Vec::new();
+
+    // Single-word fillers: count exact word matches.
+    for &filler in FILLER_WORDS {
+        // .copied() makes the iterator hand us &str values instead of references-to-references.
+        let n = words.iter().copied().filter(|&w| w == filler).count();
+        if n > 0 {
+            breakdown.push((filler.to_string(), n));
+        }
+    }
+
+    // Multi-word fillers: count substring occurences
+    for &phrase in FILLER_PHRASES {
+        let n = lower.matches(phrase).count();
+        if n > 0 {
+            breakdown.push((phrase.to_string(), n));
+        }
+    }
+
+    let filler_total = breakdown.iter().map(|(_, n)| n).sum();
+
+    FillerReport {
+        word_count: words.len(),
+        filler_total,
+        breakdown,
+    }
+}
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+// Offline speech metrics in pure rust, no network connect required
+// Tauri serializes the returned struct to JSON for the frontend automaticalliy
+#[tauri::command]
+fn analyze_speech(text: String) -> FillerReport {
+    count_fillers(&text)
 }
 
 // Send a transcript to the LLM and return its reply.
@@ -113,7 +179,20 @@ fn analyze_transcript(text: String) -> Result<String, String> {
     std::thread::spawn(move || -> Result<String, String> {
         let key = std::env::var("OPENROUTER_API_KEY")
             .map_err(|_| "OPENROUTER_API_KEY not set".to_string())?;
-        let prompt = format!("Respond helpfully to what the speaker said:\n\n{text}");
+
+        // The offline metrics give the coach hard numbers to reference
+        let metrics = count_fillers(&text);
+
+        let prompt = format!(
+            "You are a supportive but candid public-speakign coach in the Toastmasters \
+            tradition. The transcript below is from a speaker who used {} filler words \
+            across {} total words. Give brief, actionable feedback (3-5 bullets) on \
+            deliver, structure, clarity, and word choice. name one clear strength and \
+            the singel highest impact improvement. Be conciese and encouraging.\n\n\
+            Transcript:\n{}",
+            metrics.filler_total, metrics.word_count, text
+        );
+
         ask_llm(&key, "openai/gpt-4o-mini", &prompt)
     })
     .join()
@@ -186,7 +265,8 @@ pub fn run() {
             greet,
             transcribe_sample,
             record_and_transcribe,
-            analyze_transcript
+            analyze_transcript,
+            analyze_speech
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -332,4 +412,15 @@ fn asks_llm() {
     .unwrap();
     println!(">>> LLM: {reply}");
     assert!(!reply.is_empty());
+}
+
+#[test]
+fn counts_fillers() {
+    let text = "So, um, I was like, you know, basically trying to, uh, you know, explain it.";
+    let report = count_fillers(text);
+    println!(
+        "words={} fillers={} breakdown={:?}",
+        report.word_count, report.filler_total, report.breakdown
+    );
+    assert!(report.filler_total >= 5); // um, uh, like, basically, you know x2
 }
