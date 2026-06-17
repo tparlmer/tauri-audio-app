@@ -33,3 +33,4 @@ cpal = "0.18.1"
 rubato = "3.0.0"
 reqwest = { version = "0.13.4", features = ["blocking", "json"] }
 hyper = "=1.10.0"
+keyring = { version = "3", features = ["apple-native"] }

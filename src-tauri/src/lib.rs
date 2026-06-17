@@ -22,7 +22,7 @@ struct Message {
 }
 
 // Classic HTTP request/response API call to LLM provider
-fn ask_llm(api_key: &str, model: &str, prompt: &str) -> Result<String, String> {
+fn ask_llm(api_key: &str, base_url: &str, model: &str, prompt: &str) -> Result<String, String> {
     let client = reqwest::blocking::Client::new();
 
     // Build the JSON request body. `json!{...}` writes JSON inline.
@@ -31,9 +31,11 @@ fn ask_llm(api_key: &str, model: &str, prompt: &str) -> Result<String, String> {
         "messages": [{"role": "user", "content": prompt }],
     });
 
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/')); // tolerate trailing slash
+
     // POST (blocking - waits for the response)
     let resp = client
-        .post("https://openrouter.ai/api/v1/chat/completions")
+        .post(url)
         .bearer_auth(api_key) // sets header: Authorization: Bearer <key>
         .json(&body)
         .send()
@@ -171,29 +173,53 @@ fn analyze_speech(text: String) -> FillerReport {
     count_fillers(&text)
 }
 
+const KEYCHAIN_SERVICE: &str = "tauri-audio";
+const KEYCHAIN_USER: &str = "openrouter";
+
+// Save API key to the OS keychain.
+#[tauri::command]
+fn set_api_key(key: String) -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_USER).map_err(|e| e.to_string())?;
+    entry.set_password(&key).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// Read the key back (used internally by coach). not a #[command], backend only
+fn get_api_key() -> Result<String, String> {
+    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_USER).map_err(|e| e.to_string())?;
+    entry
+        .get_password()
+        .map_err(|_| "No API key saved - add one in Settings.".to_string())
+}
+
+// So the UI can show whether a key is stored
+#[tauri::command]
+fn has_api_key() -> bool {
+    get_api_key().is_ok()
+}
+
 // Send a transcript to the LLM and return its reply.
 // Runs on its own thread for two reasons: ask_llm uses a BLOCKING HTTP client, which
 // must not run inside Tauri's async runtime, and it keeps the network wait off the UI.
 #[tauri::command]
-fn analyze_transcript(text: String) -> Result<String, String> {
+fn analyze_transcript(text: String, base_url: String, model: String) -> Result<String, String> {
     std::thread::spawn(move || -> Result<String, String> {
-        let key = std::env::var("OPENROUTER_API_KEY")
-            .map_err(|_| "OPENROUTER_API_KEY not set".to_string())?;
+        let key = get_api_key()?;
 
         // The offline metrics give the coach hard numbers to reference
         let metrics = count_fillers(&text);
 
         let prompt = format!(
-            "You are a supportive but candid public-speakign coach in the Toastmasters \
+            "You are a supportive but candid public-speaking coach in the Toastmasters \
             tradition. The transcript below is from a speaker who used {} filler words \
             across {} total words. Give brief, actionable feedback (3-5 bullets) on \
-            deliver, structure, clarity, and word choice. name one clear strength and \
-            the singel highest impact improvement. Be conciese and encouraging.\n\n\
+            delivery, structure, clarity, and word choice. Name one clear strength and \
+            the single highest impact improvement. Be concise and encouraging.\n\n\
             Transcript:\n{}",
             metrics.filler_total, metrics.word_count, text
         );
 
-        ask_llm(&key, "openai/gpt-4o-mini", &prompt)
+        ask_llm(&key, &base_url, &model, &prompt)
     })
     .join()
     .map_err(|_| "llm thread panicked".to_string())?
@@ -266,7 +292,9 @@ pub fn run() {
             transcribe_sample,
             record_and_transcribe,
             analyze_transcript,
-            analyze_speech
+            analyze_speech,
+            set_api_key,
+            has_api_key
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -406,6 +434,7 @@ fn asks_llm() {
     let key = std::env::var("OPENROUTER_API_KEY").expect("set OPENROUTER_API_KEY");
     let reply = ask_llm(
         &key,
+        "https://openrouter.ai/api/v1",
         "openai/gpt-4o-mini",
         "Say hello in exactly five words.",
     )
