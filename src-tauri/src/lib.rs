@@ -160,12 +160,6 @@ fn count_fillers(transcript: &str) -> FillerReport {
     }
 }
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 // Offline speech metrics in pure rust, no network connect required
 // Tauri serializes the returned struct to JSON for the frontend automaticalliy
 #[tauri::command]
@@ -273,6 +267,17 @@ fn transcribe_sample(state: tauri::State<'_, AppState>) -> Result<String, String
     transcribe_audio(&state.whisper, "samples/jfk.wav")
 }
 
+// Quick connectivity/auth check against the configured provider.
+#[tauri::command]
+fn test_llm(base_url: String, model: String) -> Result<String, String> {
+    std::thread::spawn(move || -> Result<String, String> {
+        let key = get_api_key()?;
+        ask_llm(&key, &base_url, &model, "Reply with exactly: OK")
+    })
+    .join()
+    .map_err(|_| "llm thread panicked".to_string())?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // load model once at startup. If the file is missing the app won't work, causing a panic
@@ -288,13 +293,13 @@ pub fn run() {
         .manage(AppState { whisper }) // <-- register the shared state
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            greet,
             transcribe_sample,
             record_and_transcribe,
             analyze_transcript,
             analyze_speech,
             set_api_key,
-            has_api_key
+            has_api_key,
+            test_llm
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
