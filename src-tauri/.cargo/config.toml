@@ -1,0 +1,8 @@
+# Force the macOS deployment target for the native C/C++ builds (whisper.cpp via cmake/cc).
+# whisper.cpp's ggml-backend-reg.cpp uses std::filesystem, which requires 10.15+. Tauri's
+# build sets MACOSX_DEPLOYMENT_TARGET to its own default first, and cargo's [env] does NOT
+# override an already-set variable unless `force = true` -- which is why the unforced value
+# was ignored on the environment CMake reads. Forcing it makes CMAKE_OSX_DEPLOYMENT_TARGET
+# resolve to 10.15 too, so std::filesystem is available.
+[env]
+MACOSX_DEPLOYMENT_TARGET = { value = "10.15", force = true }

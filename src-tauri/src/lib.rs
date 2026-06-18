@@ -1,5 +1,7 @@
 use serde::Deserialize;
 use std::sync::Arc;
+use tauri::path::BaseDirectory;
+use tauri::Manager; // brings app.path() / app.manage() into scope
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 // Shared application state: the Whisper model, loaded once and reused by all commands.
@@ -263,8 +265,18 @@ fn record_and_transcribe(state: tauri::State<'_, AppState>) -> Result<String, St
 }
 
 #[tauri::command]
-fn transcribe_sample(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    transcribe_audio(&state.whisper, "samples/jfk.wav")
+fn transcribe_sample(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let wav = app
+        .path()
+        .resolve("samples/jfk.wav", BaseDirectory::Resource)
+        .map_err(|e| e.to_string())?;
+    transcribe_audio(
+        &state.whisper,
+        wav.to_str().ok_or("sampel path not valid UTF-8")?,
+    )
 }
 
 // Quick connectivity/auth check against the configured provider.
@@ -280,18 +292,23 @@ fn test_llm(base_url: String, model: String) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // load model once at startup. If the file is missing the app won't work, causing a panic
-    let whisper = Arc::new(
-        WhisperContext::new_with_params(
-            "models/ggml-base.en.bin",
-            WhisperContextParameters::default(),
-        )
-        .expect("failed to load whisper model"),
-    );
-
     tauri::Builder::default()
-        .manage(AppState { whisper }) // <-- register the shared state
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            // Resolve the BUNDLED model path. Works in dev AND in the packaged .app.
+            let model_path = app
+                .path()
+                .resolve("models/ggml-base.en.bin", BaseDirectory::Resource)?;
+            let whisper = WhisperContext::new_with_params(
+                model_path.to_str().expect("model path not valid UTF-8"),
+                WhisperContextParameters::default(),
+            )
+            .expect("failed to load whisper model");
+            app.manage(AppState {
+                whisper: Arc::new(whisper),
+            }); // register shared state
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             transcribe_sample,
             record_and_transcribe,
